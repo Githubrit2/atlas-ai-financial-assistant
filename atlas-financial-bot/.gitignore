@@ -1,0 +1,8 @@
+.env
+*.env
+atlas-financial-bot/.env
+venv/
+atlas_financial.db
+__pycache__/
+*.pyc
+.DS_Store
