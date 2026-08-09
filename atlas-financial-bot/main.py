@@ -28,9 +28,12 @@ if GROQ_API_KEY and not GROQ_API_KEY.startswith("YOUR"):
     )
 
 app = FastAPI(title="Atlas Financial Assistant Engine")
+
+# --- HOME HEALTH CHECK ROUTE ---
 @app.get("/")
 def home():
     return {"status": "online", "message": "Atlas AI Financial Assistant Engine is Live 24/7!"}
+
 @app.on_event("startup")
 def startup():
     init_db()
