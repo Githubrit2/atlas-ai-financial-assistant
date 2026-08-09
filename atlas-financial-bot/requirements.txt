@@ -9,3 +9,4 @@ google-auth-oauthlib
 requests
 pydantic
 python-multipart
+python-dotenv
