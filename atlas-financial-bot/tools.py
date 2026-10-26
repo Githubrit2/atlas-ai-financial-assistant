@@ -2,6 +2,7 @@
 import yfinance as yf
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+from dcf import dcf_value
 import json
 
 def format_number(val, suffix="", is_currency=False):
@@ -143,3 +144,47 @@ def get_company_news(symbol: str) -> str:
         return f"**Recent Breaking News & Catalysts for {clean_symbol}:**\n" + "\n".join(headlines)
     except Exception as e:
         return f"News lookup unavailable for {symbol}: {str(e)}"
+def get_dcf_valuation(symbol, growth_rate=None, discount_rate=0.10) -> str:
+    """Estimate intrinsic value per share with a simplified 5-year DCF."""
+    try:
+        clean_symbol = str(symbol).upper().strip()
+        ALIASES = {
+            "MICROSOFT": "MSFT", "GOOGLE": "GOOGL", "ALPHABET": "GOOGL",
+            "APPLE": "AAPL", "TESLA": "TSLA", "NVIDIA": "NVDA", "AMAZON": "AMZN"
+        }
+        clean_symbol = ALIASES.get(clean_symbol, clean_symbol)
+
+        info = yf.Ticker(clean_symbol).info or {}
+        fcf = info.get("freeCashflow")
+        shares = info.get("sharesOutstanding")
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+
+        if not fcf or not shares:
+            return f"Not enough cash-flow data to run a DCF for {clean_symbol}."
+        if fcf <= 0:
+            return f"{clean_symbol} has negative free cash flow, so a DCF is not meaningful."
+
+        if growth_rate is None:
+            # Use reported revenue growth, kept within a conservative 0-15% band
+            growth_rate = min(max(info.get("revenueGrowth") or 0.05, 0.0), 0.15)
+        growth_rate = float(growth_rate)
+        discount_rate = float(discount_rate)
+
+        value = dcf_value(fcf, growth_rate, discount_rate=discount_rate, shares=shares)
+
+        lines = [
+            f"**DCF Valuation: {clean_symbol}**",
+            f"• Estimated intrinsic value: ${value:,.2f} per share",
+        ]
+        if price:
+            diff = (value - price) / price * 100
+            lines.append(f"• Current price: ${price:,.2f} ({diff:+.1f}% vs. estimate)")
+        lines.append(
+            f"• Assumptions: FCF {format_number(fcf, is_currency=True)}, "
+            f"growth {growth_rate * 100:.1f}%/yr for 5 years, "
+            f"discount rate {discount_rate * 100:.1f}%, terminal growth 3.0%"
+        )
+        lines.append("• This is a simplified model, not investment advice.")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"DCF valuation unavailable for '{symbol}': {str(e)}"

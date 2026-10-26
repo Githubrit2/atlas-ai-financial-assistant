@@ -6,8 +6,7 @@ import openai
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from models import UserProfile, ConversationHistory
-from tools import get_financial_summary, search_gmail_messages, get_company_news
-
+from tools import get_financial_summary, search_gmail_messages, get_company_news, get_dcf_valuation
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -19,7 +18,7 @@ if GROQ_API_KEY and not GROQ_API_KEY.startswith("YOUR"):
         api_key=GROQ_API_KEY,
         base_url="https://api.groq.com/openai/v1"
     )
-    DEFAULT_TEXT_MODEL = "llama-3.3-70b-versatile"
+    DEFAULT_TEXT_MODEL = "openai/gpt-oss-120b"
 elif GEMINI_API_KEY:
     text_client = openai.OpenAI(
         api_key=GEMINI_API_KEY,
@@ -94,6 +93,22 @@ AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_dcf_valuation",
+            "description": "Estimate the intrinsic value per share of a stock using a discounted cash flow (DCF) model. Fetches free cash flow and shares outstanding automatically.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Ticker symbol e.g. AAPL"},
+                    "growth_rate": {"type": "number", "description": "Optional annual FCF growth as a decimal, e.g. 0.08 for 8%"},
+                    "discount_rate": {"type": "number", "description": "Optional discount rate as a decimal, default 0.10"}
+                },
+                "required": ["symbol"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "update_user_profile",
             "description": "Save or update user's role, watchlist, topics, or briefing preferences into long-term memory.",
             "parameters": {
@@ -127,6 +142,7 @@ AGENT_TOOLS = [
 def execute_tool_call(func_name: str, args: dict, user: UserProfile, db: Session) -> str:
     try:
         clean_func = func_name.strip().replace("function:", "").replace("function=", "").replace("function(", "").replace(")", "")
+        print(f"🔧 Tool called: {func_name} {args}")
         
         if clean_func == "get_financial_summary":
             symbol = args.get("symbol") or args.get("ticker") or args.get("symbols")
@@ -137,6 +153,13 @@ def execute_tool_call(func_name: str, args: dict, user: UserProfile, db: Session
         elif clean_func == "get_company_news":
             symbol = args.get("symbol") or args.get("ticker") or "NVDA"
             return get_company_news(symbol)
+        elif clean_func == "get_dcf_valuation":
+            symbol = args.get("symbol") or args.get("ticker") or "AAPL"
+            return get_dcf_valuation(
+                symbol,
+                growth_rate=args.get("growth_rate"),
+                discount_rate=args.get("discount_rate") or 0.10,
+            )
             
         elif clean_func == "update_user_profile":
             if "role" in args: user.role = args["role"]
